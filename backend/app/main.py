@@ -1,4 +1,4 @@
-
+import os
 import csv
 import json
 import shutil
@@ -31,14 +31,29 @@ app = FastAPI(
 # CORS configuration
 # --------------------------------------------------
 
+# Set FRONTEND_ORIGINS on the hosting platform to your deployed frontend URL.
+# Multiple origins may be comma-separated.
+frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+allowed_origins = list(
+    dict.fromkeys(
+        [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            *frontend_origins,
+        ]
+    )
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -300,6 +315,16 @@ def run_exception_analysis(source: str = "original"):
         raise HTTPException(
             status_code=500,
             detail=f"Exception analysis failed: {exc}",
+        ) from exc
+    except Exception as exc:
+        # Keep provider/network details in server logs, not in the API response.
+        print(f"Exception analysis provider error: {type(exc).__name__}: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Exception analysis provider failed. "
+                "Check backend logs and AI service availability."
+            ),
         ) from exc
 
 
