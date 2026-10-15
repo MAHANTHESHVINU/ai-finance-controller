@@ -1,0 +1,81 @@
+{
+  "total_records": 100,
+  "correct_predictions": 100,
+  "incorrect_predictions": 0,
+  "classification_accuracy": 1.0,
+  "classification_accuracy_percent": 100.0,
+  "actual_status_counts": {
+    "MATCHED": 80,
+    "MISSING_BANK": 8,
+    "AMOUNT_MISMATCH": 7,
+    "DUPLICATE_BANK": 5
+  },
+  "predicted_status_counts": {
+    "MATCHED": 80,
+    "MISSING_BANK": 8,
+    "AMOUNT_MISMATCH": 7,
+    "DUPLICATE_BANK": 5
+  },
+  "per_class_metrics": {
+    "AMOUNT_MISMATCH": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 7
+    },
+    "DUPLICATE_BANK": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 5
+    },
+    "MATCHED": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 80
+    },
+    "MISSING_BANK": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 8
+    }
+  },
+  "exception_detection": {
+    "true_positives": 20,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "true_negatives": 80,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0
+  },
+  "confusion_matrix": {
+    "AMOUNT_MISMATCH": {
+      "AMOUNT_MISMATCH": 7,
+      "DUPLICATE_BANK": 0,
+      "MATCHED": 0,
+      "MISSING_BANK": 0
+    },
+    "DUPLICATE_BANK": {
+      "AMOUNT_MISMATCH": 0,
+      "DUPLICATE_BANK": 5,
+      "MATCHED": 0,
+      "MISSING_BANK": 0
+    },
+    "MATCHED": {
+      "AMOUNT_MISMATCH": 0,
+      "DUPLICATE_BANK": 0,
+      "MATCHED": 80,
+      "MISSING_BANK": 0
+    },
+    "MISSING_BANK": {
+      "AMOUNT_MISMATCH": 0,
+      "DUPLICATE_BANK": 0,
+      "MATCHED": 0,
+      "MISSING_BANK": 8
+    }
+  },
+  "note": "Results measure performance on this controlled synthetic dataset. They do not establish real-world production accuracy."
+}

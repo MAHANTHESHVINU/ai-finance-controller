@@ -1,0 +1,15 @@
+{
+    "total_invoices": 100,
+    "total_payments": 100,
+    "bank_transaction_rows": 97,
+    "matched": 80,
+    "exceptions": 20,
+    "match_rate_percent": 80.0,
+    "exception_rate_percent": 20.0,
+    "status_counts": {
+        "MATCHED": 80,
+        "MISSING_BANK": 8,
+        "AMOUNT_MISMATCH": 7,
+        "DUPLICATE_BANK": 5
+    }
+}

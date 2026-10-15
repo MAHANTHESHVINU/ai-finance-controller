@@ -1,0 +1,12 @@
+{
+    "total_invoices": 100,
+    "total_payments": 100,
+    "bank_transaction_rows": 100,
+    "matched": 100,
+    "exceptions": 0,
+    "match_rate_percent": 100.0,
+    "exception_rate_percent": 0.0,
+    "status_counts": {
+        "MATCHED": 100
+    }
+}
