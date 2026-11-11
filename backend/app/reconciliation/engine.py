@@ -6,11 +6,22 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 
+REQUIRED_COLUMNS = {
+    "invoices.csv": {"invoice_id", "invoice_amount"},
+    "payments.csv": {"payment_id", "invoice_id", "payment_amount"},
+    "bank_transactions.csv": {
+        "bank_txn_id",
+        "reference_id",
+        "bank_amount",
+    },
+}
+
+
 # --------------------------------------------------
 # CSV helpers
 # --------------------------------------------------
 
-def read_csv(path: Path) -> list[dict]:
+def read_csv(path: Path, required_columns: set[str]) -> list[dict]:
     """Read CSV rows as dictionaries with normalized headers."""
 
     if not path.is_file():
@@ -19,18 +30,55 @@ def read_csv(path: Path) -> list[dict]:
     with path.open("r", newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
 
-        if not reader.fieldnames:
+        if not reader.fieldnames or not any(
+            field and field.strip() for field in reader.fieldnames
+        ):
             raise ValueError(f"{path.name} has no header row.")
 
+        fieldnames = [
+            field.strip().lower() if field else ""
+            for field in reader.fieldnames
+        ]
+
+        if any(not field for field in fieldnames):
+            raise ValueError(f"{path.name} contains a blank column name.")
+
+        if len(fieldnames) != len(set(fieldnames)):
+            raise ValueError(f"{path.name} contains duplicate column names.")
+
+        missing_columns = required_columns - set(fieldnames)
+        if missing_columns:
+            raise ValueError(
+                f"{path.name} is missing required columns: "
+                + ", ".join(sorted(missing_columns))
+            )
+
+        reader.fieldnames = fieldnames
         rows = []
 
-        for row in reader:
+        for row_number, row in enumerate(reader, start=2):
+            if None in row:
+                raise ValueError(
+                    f"{path.name} row {row_number} has more values than "
+                    "the header."
+                )
+
+            missing_values = [
+                column
+                for column in required_columns
+                if row.get(column) is None
+            ]
+            if missing_values:
+                raise ValueError(
+                    f"{path.name} row {row_number} is missing values for: "
+                    + ", ".join(sorted(missing_values))
+                )
+
             normalized = {
-                str(key).strip().lower(): (
-                    value.strip() if isinstance(value, str) else value
+                key: (
+                    value.strip() if isinstance(value, str) else ""
                 )
                 for key, value in row.items()
-                if key is not None
             }
 
             # Ignore completely empty lines.
@@ -123,9 +171,18 @@ def reconcile(data_dir: Path, output_dir: Path) -> dict:
     6. Calculate all metrics from actual results.
     """
 
-    invoices = read_csv(data_dir / "invoices.csv")
-    payments = read_csv(data_dir / "payments.csv")
-    bank_transactions = read_csv(data_dir / "bank_transactions.csv")
+    invoices = read_csv(
+        data_dir / "invoices.csv",
+        REQUIRED_COLUMNS["invoices.csv"],
+    )
+    payments = read_csv(
+        data_dir / "payments.csv",
+        REQUIRED_COLUMNS["payments.csv"],
+    )
+    bank_transactions = read_csv(
+        data_dir / "bank_transactions.csv",
+        REQUIRED_COLUMNS["bank_transactions.csv"],
+    )
 
     # --------------------------------------------------
     # Index invoices and payments
@@ -137,7 +194,7 @@ def reconcile(data_dir: Path, output_dir: Path) -> dict:
         invoice_id = invoice.get("invoice_id", "").strip()
 
         if not invoice_id:
-            continue
+            raise ValueError("Each invoice must have a non-empty invoice_id.")
 
         if invoice_id in invoice_by_id:
             raise ValueError(
@@ -151,6 +208,9 @@ def reconcile(data_dir: Path, output_dir: Path) -> dict:
         payment.get("payment_id", "").strip()
         for payment in payments
     ]
+
+    if any(not payment_id for payment_id in payment_ids):
+        raise ValueError("Each payment must have a non-empty payment_id.")
 
     nonempty_payment_ids = [value for value in payment_ids if value]
 
@@ -179,6 +239,9 @@ def reconcile(data_dir: Path, output_dir: Path) -> dict:
     ]
 
     nonempty_bank_ids = [value for value in bank_ids if value]
+
+    if len(nonempty_bank_ids) != len(bank_ids):
+        raise ValueError("Each bank transaction must have a non-empty bank_txn_id.")
 
     if len(nonempty_bank_ids) != len(set(nonempty_bank_ids)):
         raise ValueError(

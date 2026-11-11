@@ -1,7 +1,6 @@
 
 import { useCallback, useEffect, useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+import { apiUrl } from "./api";
 
 const DATASETS = [
   {
@@ -298,7 +297,7 @@ function App() {
   };
 
   const requestJson = async (url, options = {}) => {
-    const response = await fetch(`${API_BASE}${url}`, options);
+    const response = await fetch(apiUrl(url), options);
 
     const data = await response.json().catch(() => ({}));
 
@@ -385,12 +384,13 @@ function App() {
     event.preventDefault();
 
     if (!selectedFile) {
-      showMessage("Please select a CSV file first.", "error");
+      showMessage("Please select a CSV or PDF file first.", "error");
       return;
     }
 
-    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
-      showMessage("Only CSV files are supported.", "error");
+    const extension = selectedFile.name.split(".").pop()?.toLowerCase();
+    if (!["csv", "pdf"].includes(extension)) {
+      showMessage("Only CSV and PDF files are supported.", "error");
       return;
     }
 
@@ -399,10 +399,10 @@ function App() {
     formData.append("file", selectedFile);
 
     setUploading(true);
-    showMessage("Uploading and validating CSV...", "info");
+    showMessage("Uploading and validating file...", "info");
 
     try {
-      const result = await requestJson("/api/upload-csv", {
+      const result = await requestJson("/api/upload-file", {
         method: "POST",
         body: formData,
       });
@@ -411,7 +411,9 @@ function App() {
       event.target.reset();
 
       showMessage(
-        `${result.message} ${result.saved_as} — ${result.row_count} rows validated.`,
+        `${result.message} ${result.saved_as} — ${result.row_count} rows validated.${
+          result.ocr_used ? " OCR was used; verify extracted data carefully." : ""
+        }`,
         "success"
       );
     } catch (error) {
@@ -536,7 +538,7 @@ function App() {
               style={styles.input}
             >
               <option value="original">Original datasets</option>
-              <option value="uploaded">Uploaded CSV datasets</option>
+              <option value="uploaded">Uploaded CSV/PDF datasets</option>
               <option value="clean_test">Clean Test Dataset (100% match)</option>
             </select>
           </div>
@@ -571,13 +573,14 @@ function App() {
           {message || "Ready."}
         </div>
 
-        {/* CSV upload */}
+        {/* CSV/PDF upload */}
         <section style={styles.panel}>
           <h3 style={styles.panelTitle}>Upload Financial Data</h3>
 
           <p style={{ ...styles.muted, marginBottom: "20px" }}>
-            Upload each CSV separately. Files are validated before they replace
-            the corresponding uploaded dataset.
+            Upload each dataset separately as CSV or PDF. PDF tables and
+            labeled fields are extracted and validated before replacing the
+            corresponding uploaded dataset. Scanned PDFs require Tesseract OCR.
           </p>
 
           <form onSubmit={handleUpload}>
@@ -614,13 +617,13 @@ function App() {
 
               <div>
                 <label htmlFor="csv-file" style={styles.label}>
-                  Select CSV file
+                  Select CSV or PDF file
                 </label>
 
                 <input
                   id="csv-file"
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".csv,.pdf,text/csv,application/pdf"
                   onChange={(event) =>
                     setSelectedFile(event.target.files?.[0] || null)
                   }

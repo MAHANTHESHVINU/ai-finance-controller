@@ -34,7 +34,7 @@ Finance teams often need to compare invoices, payment records, and bank transact
 
 | Capability | What it provides |
 |---|---|
-| 📂 **CSV data input** | Work with invoice, payment, and bank transaction datasets |
+| 📂 **CSV and PDF data input** | Upload invoice, payment, and bank transaction datasets as CSV files or PDFs |
 | 🔎 **Transaction reconciliation** | Match records and flag discrepancies |
 | 🚩 **Exception detection** | Identify missing records, amount mismatches, and duplicate bank transactions |
 | 🧠 **AI-assisted explanations** | Use Ollama with `gemma3:1b` to explain exceptions and suggest next steps |
@@ -64,7 +64,7 @@ flowchart TD
 
 ### The workflow, in four steps
 
-1. **Load** — select the original datasets, upload supported CSV files, or choose the clean test dataset.
+1. **Load** — select the original datasets, upload CSV files or PDFs, or choose the clean test dataset.
 2. **Reconcile** — compare financial records and classify transaction outcomes.
 3. **Explain** — ask the local Ollama model to provide context and recommended investigation steps for exceptions.
 4. **Review** — use the dashboard and output CSVs to inspect the evidence. AI output is advisory, not an approval or a financial instruction.
@@ -116,6 +116,15 @@ Install or prepare:
 - Node.js and npm
 - [Ollama](https://ollama.com/)
 - The local model `gemma3:1b`
+
+Install the backend dependencies from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+```
+
+For scanned/image-only PDFs, install Tesseract OCR and make sure `tesseract.exe`
+is available on `PATH`. Digitally generated PDFs do not need Tesseract.
 
 Check the model:
 
@@ -171,9 +180,33 @@ For a short and repeatable presentation:
 6. Select **Clean Test Dataset** and show **100 matched / 0 exceptions / 100% match rate**.
 7. Explain the boundary between deterministic reconciliation and AI-assisted investigation.
 
+To run the backend unit tests:
+
+```powershell
+Set-Location backend
+python -m unittest discover -s tests -v
+```
+
 ### Suggested demo message
 
 > “AI Finance Controller automates transaction matching and highlights exceptions. A local language model then helps analysts understand those exceptions and decide what to investigate next, while the original reconciliation result remains authoritative.”
+
+### Uploading CSV and PDF datasets
+
+Choose the dataset type (Invoices, Payments, or Bank Transactions), then upload
+one CSV or PDF for that dataset. CSV headers are validated directly. PDFs are
+converted to the matching CSV schema using recognizable table headers or
+labeled fields; scanned PDFs use local Tesseract OCR. Supported PDF labels
+include common variants such as “Invoice Number”, “Paid Amount”, and
+“Transaction Reference”. Each upload replaces only that dataset after
+extraction and validation succeed.
+
+PDF layouts vary widely. If a bank statement omits transaction IDs, the
+extractor assigns page/row-based IDs for reconciliation. Review extracted
+values against the source PDF before using the reconciliation results,
+especially when OCR was used. If a PDF has no recognizable rows or required
+identifiers/amounts, the upload is rejected with an extraction error; upload a
+normalized CSV for unsupported layouts.
 
 ---
 
@@ -216,16 +249,52 @@ ai-finance-controller/
 
 ## 🌐 Deployment notes
 
-The current workflow is designed for local development. For a public deployment:
+The repository includes Vercel configuration for the frontend and a Render
+Blueprint for a free Docker-based FastAPI backend. These files prepare the
+services for deployment; they do not deploy them automatically.
 
-- Host the React frontend and FastAPI backend.
-- Configure the frontend API base URL to point to the deployed backend.
-- Configure backend CORS for the deployed frontend origin.
-- Provide a reachable model inference endpoint; `localhost` on a hosted server does **not** point to your laptop.
-- Decide how uploaded files and result CSVs should persist across restarts and redeployments.
-- Never expose private financial records or model endpoints without appropriate access controls.
+### Deploy the frontend to Vercel
 
-Deployment is a separate step; this README does not imply that a public instance is already live.
+1. Import this GitHub repository into Vercel.
+2. Set **Root Directory** to `frontend` and keep the detected Vite build
+   settings.
+3. Add the environment variable `VITE_API_BASE_URL` with the public URL of
+   your deployed backend, for example `https://your-api.onrender.com`.
+4. Deploy or redeploy the frontend, then copy its public URL.
+
+`frontend/vercel.json` configures client-side route fallback. The frontend
+uses the local backend URL only during Vite development; production requests
+require `VITE_API_BASE_URL`.
+
+### Deploy the backend to Render (free)
+
+1. In Render, create a **Blueprint** from this repository and use the included
+   `render.yaml`. The service uses the included `Dockerfile` and free instance
+   plan.
+2. Set `FRONTEND_ORIGINS` to the exact Vercel origin, such as
+   `https://your-app.vercel.app` (no trailing slash).
+3. `OLLAMA_URL` is optional. Leave it empty to use rule-based exception
+   explanations; if set, it must be a reachable Ollama `/api/generate`
+   endpoint. A hosted backend cannot reach Ollama on your laptop through
+   `localhost`.
+4. After the backend is live, set its URL as Vercel's `VITE_API_BASE_URL` and
+   redeploy the frontend.
+
+`backend/.env.example` and `frontend/.env.example` list the relevant settings.
+Do not commit real credentials or private endpoint tokens.
+
+### Deployment limitations
+
+- Render's free web services can spin down when idle, so the first request
+  after inactivity may take longer.
+- The backend currently writes uploads and generated results to local files.
+  Those files may be lost when a hosted instance restarts or is redeployed;
+  persistent storage or a database is needed for durable user data.
+- The app does not currently provide authentication or tenant isolation. Do
+  not use a public deployment with private financial data until access
+  controls and storage protections are in place.
+- AI exception analysis needs an Ollama endpoint reachable by the backend.
+  Reconciliation and rule-based analysis can run without that service.
 
 ---
 
@@ -233,8 +302,7 @@ Deployment is a separate step; this README does not imply that a public instance
 
 - [ ] Validate AI explanations against source amounts and transaction fields
 - [ ] Add deterministic exception-priority rules
-- [ ] Add automated tests for every reconciliation status
-- [ ] Add stronger CSV schema validation and clearer upload errors
+- [ ] Extend automated tests to every reconciliation status and PDF layout
 - [ ] Add audit logging and secure user access
 - [ ] Deploy frontend, backend, and model inference
 - [ ] Add persistence and monitoring suitable for production

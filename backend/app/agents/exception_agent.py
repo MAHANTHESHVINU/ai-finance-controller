@@ -8,8 +8,11 @@ import urllib.request
 from pathlib import Path
 
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-DEFAULT_MODEL = "gemma3:1b"
+OLLAMA_URL = os.getenv(
+    "OLLAMA_URL",
+    "http://localhost:11434/api/generate",
+).rstrip("/")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:1b")
 
 EXCEPTION_STATUSES = {
     "AMOUNT_MISMATCH",
@@ -19,6 +22,7 @@ EXCEPTION_STATUSES = {
     "PAYMENT_INVOICE_MISMATCH",
     "INVALID_AMOUNT",
 }
+VALID_STATUSES = EXCEPTION_STATUSES | {"MATCHED"}
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -26,14 +30,62 @@ def read_csv(path: Path) -> list[dict]:
         raise FileNotFoundError(f"File not found: {path}")
 
     with path.open("r", newline="", encoding="utf-8-sig") as file:
-        return list(csv.DictReader(file))
+        reader = csv.DictReader(file)
+        if not reader.fieldnames:
+            raise ValueError(f"{path.name} has no header row.")
+
+        fieldnames = [
+            field.strip().lower() if field else ""
+            for field in reader.fieldnames
+        ]
+        if any(not field for field in fieldnames):
+            raise ValueError(f"{path.name} contains a blank column name.")
+        if len(fieldnames) != len(set(fieldnames)):
+            raise ValueError(f"{path.name} contains duplicate column names.")
+
+        missing_columns = {"payment_id", "status"} - set(fieldnames)
+        if missing_columns:
+            raise ValueError(
+                f"{path.name} is missing required columns: "
+                + ", ".join(sorted(missing_columns))
+            )
+
+        reader.fieldnames = fieldnames
+        records = []
+        for row_number, row in enumerate(reader, start=2):
+            if None in row:
+                raise ValueError(
+                    f"{path.name} row {row_number} has more values than "
+                    "the header."
+                )
+
+            record = {
+                key: value.strip() if isinstance(value, str) else ""
+                for key, value in row.items()
+            }
+            if not record["payment_id"]:
+                raise ValueError(
+                    f"{path.name} row {row_number} has no payment_id."
+                )
+            if not record["status"]:
+                raise ValueError(
+                    f"{path.name} row {row_number} has no status."
+                )
+            record["status"] = record["status"].upper()
+            records.append(record)
+
+        return records
 
 
 def rule_based_analysis(record: dict) -> dict:
     """Safe fallback when the local LLM is unavailable."""
-    status = record.get("status", "")
-    difference = record.get("difference", "")
-    payment_id = record.get("payment_id", "")
+    status = str(record.get("status") or "").strip().upper()
+    difference = str(
+        record.get("amount_difference")
+        or record.get("difference")
+        or ""
+    ).strip()
+    payment_id = str(record.get("payment_id") or "").strip()
 
     explanations = {
         "AMOUNT_MISMATCH": (
@@ -91,10 +143,19 @@ def ollama_analysis(record: dict, model: str) -> dict:
         "invoice_amount": record.get("invoice_amount"),
         "payment_amount": record.get("payment_amount"),
         "bank_amount": record.get("bank_amount"),
-        "difference": record.get("difference"),
+        "difference": (
+            record.get("amount_difference")
+            or record.get("difference")
+        ),
         "status": record.get("status"),
-        "reason_from_engine": record.get("reason"),
-        "transaction_references": record.get("bank_transaction_ids"),
+        "reason_from_engine": (
+            record.get("exception_reason")
+            or record.get("reason")
+        ),
+        "transaction_references": (
+            record.get("bank_transaction_ids")
+            or record.get("bank_txn_id")
+        ),
     }
 
     prompt = f"""
@@ -135,7 +196,16 @@ Evidence:
     with urllib.request.urlopen(request, timeout=60) as response:
         body = json.loads(response.read().decode("utf-8"))
 
-    generated = json.loads(body["response"])
+    if not isinstance(body, dict) or not isinstance(body.get("response"), str):
+        raise ValueError("The model response did not contain JSON text.")
+
+    try:
+        generated = json.loads(body["response"])
+    except json.JSONDecodeError as exc:
+        raise ValueError("The model returned invalid JSON.") from exc
+
+    if not isinstance(generated, dict):
+        raise ValueError("The model response must be a JSON object.")
 
     explanation = generated.get("explanation")
     action = generated.get("recommended_action")
@@ -169,6 +239,18 @@ def analyze_exceptions(
     model: str = DEFAULT_MODEL,
 ) -> list[dict]:
     records = read_csv(input_path)
+    invalid_statuses = [
+        (index, row["status"])
+        for index, row in enumerate(records, start=2)
+        if row["status"] not in VALID_STATUSES
+    ]
+    if invalid_statuses:
+        row_number, status = invalid_statuses[0]
+        raise ValueError(
+            f"{input_path.name} row {row_number} has unsupported "
+            f"reconciliation status {status!r}."
+        )
+
     exceptions = [
         row for row in records
         if row.get("status") in EXCEPTION_STATUSES
@@ -184,7 +266,7 @@ def analyze_exceptions(
 
         analysis = None
 
-        if use_ollama:
+        if use_ollama and OLLAMA_URL:
             try:
                 analysis = ollama_analysis(record, model)
             except (

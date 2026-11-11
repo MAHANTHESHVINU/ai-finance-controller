@@ -1,7 +1,7 @@
 import os
 import csv
 import json
-import shutil
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.agents.exception_agent import analyze_exceptions
 from app.reconciliation.engine import reconcile
 from app.services.file_validator import validate_csv
+from app.services.pdf_parser import extract_pdf_to_csv
 
 
 # --------------------------------------------------
@@ -72,6 +73,9 @@ RESULTS_DIR = DATA_DIR / "results"
 UPLOADED_RESULTS_DIR = RESULTS_DIR / "uploaded"
 CLEAN_TEST_DIR = DATA_DIR / "clean_test"
 CLEAN_TEST_RESULTS_DIR = RESULTS_DIR / "clean_test"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------
@@ -356,16 +360,15 @@ def get_exceptions(source: str = "original"):
 
 
 # --------------------------------------------------
-# CSV upload endpoint
-# Validates and saves the three required datasets.
+# CSV and PDF upload endpoints
+# PDFs are extracted to the canonical CSV schema before validation.
 # --------------------------------------------------
 
-@app.post("/api/upload-csv")
-async def upload_csv(
-    dataset_type: str = Form(...),
-    file: UploadFile = File(...),
+async def _process_upload(
+    dataset_type: str,
+    file: UploadFile,
+    allowed_extensions: set[str] | None = None,
 ):
-
     allowed_types = {
         "invoices",
         "payments",
@@ -381,62 +384,104 @@ async def upload_csv(
             ),
         )
 
-    if (
-        not file.filename
-        or not file.filename.lower().endswith(".csv")
-    ):
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+    if allowed_extensions is None:
+        allowed_extensions = {".csv", ".pdf"}
+    if not filename or extension not in allowed_extensions:
         raise HTTPException(
             status_code=400,
-            detail="Please upload a CSV file.",
+            detail=(
+                "Please upload a CSV or PDF file."
+                if allowed_extensions == {".csv", ".pdf"}
+                else "Please upload a CSV file."
+            ),
         )
 
-    UPLOAD_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     destination = UPLOAD_DIR / f"{dataset_type}.csv"
-
-    temporary = UPLOAD_DIR / (
-        f".{dataset_type}_{uuid4().hex}.tmp"
-    )
+    token = uuid4().hex
+    raw_temporary = UPLOAD_DIR / f".{dataset_type}_{token}.tmp{extension}"
+    extracted_temporary = UPLOAD_DIR / f".{dataset_type}_{token}.csv"
 
     try:
-        # Save to a temporary file before validation.
-        with temporary.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        total_bytes = 0
+        with raw_temporary.open("wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    raise ValueError("Uploaded files must be 25 MB or smaller.")
+                buffer.write(chunk)
 
-        # Validate required columns and amount values.
+        file_format = extension[1:].upper()
+        validation_path = raw_temporary
+        extraction_result = {}
+
+        if extension == ".pdf":
+            extraction_result = extract_pdf_to_csv(
+                raw_temporary,
+                extracted_temporary,
+                dataset_type,
+            )
+            validation_path = extracted_temporary
+
         validation_result = validate_csv(
-            temporary,
+            validation_path,
             dataset_type,
         )
 
-        # Replace the previous upload only after validation succeeds.
-        temporary.replace(destination)
+        validation_path.replace(destination)
 
         return {
-            "message": "CSV validated and saved successfully.",
-            "filename": file.filename,
+            "message": (
+                f"{file_format} extracted and validated successfully."
+                if extension == ".pdf"
+                else "CSV validated and saved successfully."
+            ),
+            "filename": filename,
             "saved_as": destination.name,
+            "file_format": file_format,
             **validation_result,
+            **extraction_result,
         }
 
     except ValueError as exc:
-        temporary.unlink(missing_ok=True)
-
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
+    except HTTPException:
+        raise
 
     except Exception as exc:
-        temporary.unlink(missing_ok=True)
-
+        logger.exception("Could not process uploaded financial file.")
         raise HTTPException(
             status_code=500,
-            detail="Could not process the uploaded CSV.",
+            detail="Could not process the uploaded file. Check backend logs.",
         ) from exc
 
     finally:
+        raw_temporary.unlink(missing_ok=True)
+        extracted_temporary.unlink(missing_ok=True)
         await file.close()
+
+
+@app.post("/api/upload-file")
+async def upload_file(
+    dataset_type: str = Form(...),
+    file: UploadFile = File(...),
+):
+    return await _process_upload(dataset_type, file)
+
+
+@app.post("/api/upload-csv")
+async def upload_csv(
+    dataset_type: str = Form(...),
+    file: UploadFile = File(...),
+):
+    return await _process_upload(
+        dataset_type,
+        file,
+        allowed_extensions={".csv"},
+    )

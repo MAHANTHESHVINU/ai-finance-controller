@@ -1,5 +1,7 @@
 
+import math
 from pathlib import Path
+
 import pandas as pd
 
 
@@ -69,9 +71,12 @@ def validate_csv(file_path: Path, dataset_type: str) -> dict:
     amount_column = AMOUNT_COLUMNS[dataset_type]
     amounts = pd.to_numeric(df[amount_column], errors="coerce")
 
-    if amounts.isna().any():
+    if amounts.isna().any() or not amounts.map(
+        lambda amount: math.isfinite(float(amount))
+    ).all():
         raise ValueError(
-            f"Column '{amount_column}' contains invalid or empty amounts."
+            f"Column '{amount_column}' contains invalid, non-finite, "
+            "or empty amounts."
         )
 
     if (amounts < 0).any():

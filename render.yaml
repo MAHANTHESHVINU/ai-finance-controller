@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ai-finance-controller-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: OLLAMA_URL
+        value: ""
+      - key: OLLAMA_MODEL
+        value: gemma3:1b

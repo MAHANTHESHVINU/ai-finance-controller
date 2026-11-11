@@ -1,7 +1,6 @@
 
 import { useState } from "react";
-
-const API_BASE = "http://127.0.0.1:8000";
+import { apiUrl } from "../api";
 
 export default function CsvUpload() {
   const [datasetType, setDatasetType] = useState("invoices");
@@ -27,7 +26,7 @@ export default function CsvUpload() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${API_BASE}/api/upload-csv`, {
+      const response = await fetch(apiUrl("/api/upload-csv"), {
         method: "POST",
         body: formData,
       });
