@@ -249,36 +249,26 @@ ai-finance-controller/
 
 ## 🌐 Deployment notes
 
-The repository includes Vercel configuration for the frontend and a Render
-Blueprint for a free Docker-based FastAPI backend. These files prepare the
-services for deployment; they do not deploy them automatically.
+### Live application
 
-### Deploy the frontend to Vercel
+- **Dashboard:** [ai-finance-controller-lyart.vercel.app](https://ai-finance-controller-lyart.vercel.app)
+- **Backend health:** [ai-finance-controller-api-6m5l.onrender.com/health](https://ai-finance-controller-api-6m5l.onrender.com/health)
 
-1. Import this GitHub repository into Vercel.
-2. Set **Root Directory** to `frontend` and keep the detected Vite build
-   settings.
-3. Add the environment variable `VITE_API_BASE_URL` with the public URL of
-   your deployed backend, for example `https://your-api.onrender.com`.
-4. Deploy or redeploy the frontend, then copy its public URL.
+The GitHub repository's About website link points to the live dashboard. The
+frontend is hosted on Vercel and the FastAPI backend runs as a free Render
+Docker web service.
 
-`frontend/vercel.json` configures client-side route fallback. The frontend
-uses the local backend URL only during Vite development; production requests
-require `VITE_API_BASE_URL`.
+### Deployment configuration
 
-### Deploy the backend to Render (free)
+The Vercel project uses `frontend` as its root directory and sets
+`VITE_API_BASE_URL` to the Render backend URL. `frontend/vercel.json` configures
+client-side route fallback. The frontend uses the local backend URL only during
+Vite development.
 
-1. In Render, create a **Blueprint** from this repository and use the included
-   `render.yaml`. The service uses the included `Dockerfile` and free instance
-   plan.
-2. Set `FRONTEND_ORIGINS` to the exact Vercel origin, such as
-   `https://your-app.vercel.app` (no trailing slash).
-3. `OLLAMA_URL` is optional. Leave it empty to use rule-based exception
-   explanations; if set, it must be a reachable Ollama `/api/generate`
-   endpoint. A hosted backend cannot reach Ollama on your laptop through
-   `localhost`.
-4. After the backend is live, set its URL as Vercel's `VITE_API_BASE_URL` and
-   redeploy the frontend.
+The Render Blueprint in `render.yaml` configures the free Docker-based backend.
+`FRONTEND_ORIGINS` must match the Vercel origin. `OLLAMA_URL` is optional;
+without a reachable Ollama endpoint, exception analysis uses rule-based
+explanations.
 
 `backend/.env.example` and `frontend/.env.example` list the relevant settings.
 Do not commit real credentials or private endpoint tokens.
